@@ -1,4 +1,4 @@
-name: "Huawei CCE Kubeconfig Setup"
+name: "Huawei CCE Autopilot Kubeconfig Setup"
 description: "Generate kubeconfig for Huawei Cloud CCE Autopilot clusters"
 author: "Your Name"
 branding:
