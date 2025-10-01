@@ -106,6 +106,4 @@ You should store these values securely in GitHub **Secrets**.
 
 Created by **Lemrex**
 
----
 
-Do you want me to also add a **badges section** (version, license, marketplace) like official GitHub Actions usually have?
