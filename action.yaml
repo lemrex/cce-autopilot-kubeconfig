@@ -1,0 +1,125 @@
+name: "Huawei CCE Kubeconfig Setup"
+description: "Generate kubeconfig for Huawei Cloud CCE Autopilot clusters"
+author: "Your Name"
+branding:
+  icon: "cloud"
+  color: "blue"
+
+inputs:
+  project_id:
+    description: "Huawei Cloud Project ID"
+    required: true
+  cluster_id:
+    description: "CCE Cluster ID"
+    required: true
+  region:
+    description: "Huawei Cloud region (default: af-south-1)"
+    required: false
+    default: "af-south-1"
+  duration:
+    description: "Cert duration in days (1–1825)"
+    required: false
+    default: "1825"
+  access_key:
+    description: "Huawei Cloud Access Key"
+    required: true
+  secret_key:
+    description: "Huawei Cloud Secret Key"
+    required: true
+
+outputs:
+  kubeconfig:
+    description: "Path to generated kubeconfig file"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Prepare bin dir
+      shell: bash
+      run: mkdir -p $HOME/.local/bin
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y curl jq expect
+
+    - name: Install yq
+      shell: bash
+      run: |
+        curl -sSL https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 \
+          -o $HOME/.local/bin/yq
+        chmod +x $HOME/.local/bin/yq
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+
+    - name: Install Huawei Cloud CLI
+      shell: bash
+      run: |
+        wget "https://ap-southeast-3-hwcloudcli.obs.ap-southeast-3.myhuaweicloud.com/cli/latest/huaweicloud-cli-linux-amd64.tar.gz" -O huaweicloud-cli-linux-amd64.tar.gz
+        tar -zxvf huaweicloud-cli-linux-amd64.tar.gz
+        sudo mv $(pwd)/hcloud /usr/local/bin/
+        hcloud version
+        
+
+    - name: Install kubectl
+      shell: bash
+      run: |
+        KUBECTL_VERSION=$(curl -sL https://dl.k8s.io/release/stable.txt)
+        curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+        chmod +x kubectl && mv kubectl $HOME/.local/bin/
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+    - name: Configure Huawei Cloud CLI
+      shell: bash
+      run: |
+        /usr/bin/expect <<EOF
+        set timeout 10
+        spawn hcloud configure init
+        expect "Access Key ID \\[required\\]:"
+        send "${{ inputs.access_key }}\r"
+        expect "Secret Access Key \\[required\\]:"
+        send "${{ inputs.secret_key }}\r"
+        expect "Secret Access Key (again):"
+        send "${{ inputs.secret_key }}\r"
+        expect "Region:"
+        send "${{ inputs.region }}\r"
+        expect eof
+        EOF
+
+        hcloud configure set --cli-offline=false
+
+        /usr/bin/expect <<EOF
+        set timeout 10
+        spawn hcloud
+        expect "Agree and continue (y)/Disagree and exit (N):"
+        send "y\r"
+        expect eof
+        EOF
+
+    - name: Generate cluster kubeconfig
+      id: gen
+      shell: bash
+      run: |
+        echo ">>> Generating cluster certificate..."
+        hcloud CCE CreateAutopilotKubernetesClusterCert \
+          --cli-region=${{ inputs.region }} \
+          --project_id=${{ inputs.project_id }} \
+          --cluster_id=${{ inputs.cluster_id }} \
+          --duration=${{ inputs.duration }} > /tmp/cert.json
+
+        echo ">>> Validating JSON..."
+        jq empty /tmp/cert.json || { echo "Invalid JSON"; exit 1; }
+
+        echo ">>> Extracting kubeconfig..."
+        yq eval -P '.' /tmp/cert.json > /tmp/kubeconfig.yaml
+
+        mkdir -p ~/.kube
+        cp /tmp/kubeconfig.yaml ~/.kube/config
+        chmod 600 ~/.kube/config
+
+        echo "kubeconfig=$HOME/.kube/config" >> $GITHUB_OUTPUT
+
+    - name: Verify cluster access
+      shell: bash
+      run: kubectl cluster-info || echo "kubectl installed but cannot reach cluster yet"
