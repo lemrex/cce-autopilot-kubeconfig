@@ -48,7 +48,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Huawei CCE Kubeconfig
-        uses: your-org/huawei-cce-kubeconfig-setup@v1
+        uses: lemrex/cce-autopilot-kubeconfig@v1.0.0
         with:
           project_id: ${{ secrets.HUAWEI_PROJECT_ID }}
           cluster_id: ${{ secrets.HUAWEI_CLUSTER_ID }}
